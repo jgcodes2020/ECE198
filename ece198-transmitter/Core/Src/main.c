@@ -177,26 +177,6 @@ int main(void)
 	  pb10_state = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_10); // Read PB10
 	  pb4_state = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4);  // Read PB4
 
-	  if (pb6_state == GPIO_PIN_RESET) {
-		 printf("Row 1\n");
-	  }
-
-	  if (pa9_state == GPIO_PIN_RESET) {
-		  printf("Row 2\n");
-	  }
-
-	  if (pb10_state == GPIO_PIN_RESET) {
-		  printf("Row 3\n");
-	  }
-
-	  if (pb4_state == GPIO_PIN_RESET) {
-		  printf("Row 4\n");
-	  }
-
-
-
-
-
 	  HAL_Delay(100); // Delay for debouncing
   }
   /* USER CODE END 3 */
