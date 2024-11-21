@@ -145,7 +145,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if (GPIO_Pin == GPIO_PIN_13) {
 		puts("print test");
-		ring_buffer_put(&ring_buffer, 0x13);
+		ring_buffer_put(&ring_buffer, 'e');
 	}
 }
 /* USER CODE END 0 */
