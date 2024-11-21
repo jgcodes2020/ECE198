@@ -41,7 +41,8 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-
+volatile uint8_t intermediary_byte = 0;
+volatile uint8_t bit_counter = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -66,6 +67,18 @@
 /**
   * @brief This function handles Non maskable interrupt.
   */
+
+void USART2_IRQHandler(void) {
+    uint8_t received_byte;
+
+    // Check if the interrupt was triggered by data reception
+    if (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_RXNE)) {
+        received_byte = (uint8_t)(huart2.Instance->DR & 0xFF);  // Read the received byte
+        ring_buffer_put(&global_ring_buffer, received_byte);    // Push it into the ring buffer
+    }
+    HAL_UART_IRQHandler(&huart2);  // Clear interrupt flags
+}
+
 void NMI_Handler(void)
 {
   /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
@@ -190,6 +203,35 @@ void SysTick_Handler(void)
 
   /* USER CODE END SysTick_IRQn 1 */
 }
+
+void EXTI0_IRQHandler(void) {
+    if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_0) != RESET) {
+        __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_0);
+        intermediary_byte = (intermediary_byte << 1) | 1;
+        bit_counter++;
+
+        if (bit_counter == 8) {
+            ring_buffer_put(&global_ring_buffer, intermediary_byte);
+            intermediary_byte = 0;
+            bit_counter = 0;
+        }
+    }
+}
+
+void EXTI1_IRQHandler(void) {
+    if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_1) != RESET) {
+        __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_1);
+        intermediary_byte = (intermediary_byte << 1);
+        bit_counter++;
+
+        if (bit_counter == 8) {
+            ring_buffer_put(&global_ring_buffer, intermediary_byte);
+            intermediary_byte = 0;
+            bit_counter = 0;
+        }
+    }
+}
+
 
 /******************************************************************************/
 /* STM32F4xx Peripheral Interrupt Handlers                                    */
