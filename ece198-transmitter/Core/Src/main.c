@@ -1,27 +1,30 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2024 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2024 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stddef.h>
 #include <stdio.h>
+#include <stdbool.h>
+#include <string.h>
 #include "ring_buffer.h"
 /* USER CODE END Includes */
 
@@ -51,6 +54,9 @@ UART_HandleTypeDef huart2;
 RingBuffer ring_buffer;
 uint8_t current_byte = 0;
 uint8_t shift_count = 0;
+
+bool kp_states_prev[12];
+bool kp_states[12];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -61,53 +67,86 @@ static void MX_TIM2_Init(void);
 static void MX_TIM10_Init(void);
 static void MX_TIM11_Init(void);
 /* USER CODE BEGIN PFP */
-static void Main_TIM_OnePulse_Fire(TIM_HandleTypeDef* htim);
+static void Main_TIM_OnePulse_Fire(TIM_HandleTypeDef *htim);
+static void read_rows();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 // Not provided by STM HAL. Fires a oneshot timer from software.
-static void Main_TIM_OnePulse_Fire(TIM_HandleTypeDef* htim) {
-  htim->Instance->CR1 |= TIM_CR1_CEN;
+static void Main_TIM_OnePulse_Fire(TIM_HandleTypeDef *htim) {
+	htim->Instance->CR1 |= TIM_CR1_CEN;
 }
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
-  if (htim == &htim2) {
-    // check if we need a new byte
-    if (shift_count == 0) {
-      TakeResult res = ring_buffer_take(&ring_buffer);
-      if (!res.is_valid) {
-        return;
-      }
-      shift_count = 8;
-      current_byte = res.value;
-    }
-    // get the next bit
-    uint8_t next_bit = current_byte & 0x01;
-    // shift right, tally up
-    current_byte >>= 1;
-    shift_count--;
+static void read_rows() {
+	GPIO_TypeDef* const col_ports[3] = {
+		KP_COL1_GPIO_Port,
+		KP_COL2_GPIO_Port,
+		KP_COL3_GPIO_Port,
+	};
+	uint32_t const col_pins[3] = {
+		KP_COL1_Pin,
+		KP_COL2_Pin,
+		KP_COL3_Pin,
+	};
 
-    if (next_bit) {
-      Main_TIM_OnePulse_Fire(&htim10);
-    }
-    else {
-      Main_TIM_OnePulse_Fire(&htim11);
-    }
+	GPIO_TypeDef* const row_ports[4] = {
+		KP_ROW1_GPIO_Port,
+		KP_ROW2_GPIO_Port,
+		KP_ROW3_GPIO_Port,
+		KP_ROW4_GPIO_Port,
+	};
+	uint32_t const row_pins[4] = {
+		KP_ROW1_Pin,
+		KP_ROW2_Pin,
+		KP_ROW3_Pin,
+		KP_ROW4_Pin,
+	};
 
-    return;
-  }
+	for (size_t c = 0; c < 3; c++) {
+		HAL_GPIO_WritePin(col_ports[c], col_pins[c], 1);
+		for (size_t r = 0; r < 4; r++) {
+			kp_states[3 * r + c] = HAL_GPIO_ReadPin(row_ports[r], row_pins[r]);
+		}
+		HAL_GPIO_WritePin(col_ports[c], col_pins[c], 0);
+	}
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+	if (htim == &htim2) {
+		// check if we need a new byte
+		if (shift_count == 0) {
+			TakeResult res = ring_buffer_take(&ring_buffer);
+			if (!res.is_valid) {
+				return;
+			}
+			shift_count = 8;
+			current_byte = res.value;
+		}
+		// get the next bit
+		uint8_t next_bit = current_byte & 0x01;
+		// shift right, tally up
+		current_byte >>= 1;
+		shift_count--;
+
+		if (next_bit) {
+			Main_TIM_OnePulse_Fire(&htim10);
+		} else {
+			Main_TIM_OnePulse_Fire(&htim11);
+		}
+
+		return;
+	}
 }
 
 // 01100101
 // -> 1 0 1 0 0 1 1 0
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-  if (GPIO_Pin == GPIO_PIN_13) {
-    puts("print test");
-    ring_buffer_put(&ring_buffer, 'e');
-  }
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+	if (GPIO_Pin == GPIO_PIN_13) {
+		puts("print test");
+		ring_buffer_put(&ring_buffer, 'e');
+	}
 }
 /* USER CODE END 0 */
 
@@ -128,7 +167,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  ring_buffer_init(&ring_buffer);
+	ring_buffer_init(&ring_buffer);
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -145,21 +184,35 @@ int main(void)
   MX_TIM10_Init();
   MX_TIM11_Init();
   /* USER CODE BEGIN 2 */
-  HAL_TIM_Base_Start_IT(&htim2);
-  HAL_TIM_OnePulse_Start(&htim10, TIM_CHANNEL_1);
-  HAL_TIM_OnePulse_Start(&htim11, TIM_CHANNEL_1);
+	HAL_TIM_Base_Start_IT(&htim2);
+	HAL_TIM_OnePulse_Start(&htim10, TIM_CHANNEL_1);
+	HAL_TIM_OnePulse_Start(&htim11, TIM_CHANNEL_1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
+	// Value of variable is numerical value of button pressed on keypad
+	// If button is currently not pressed, value is -1
 
+	// Set D11, D9, D7 as outputs
+//  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_7);
+//  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_7);
+//  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_7);
+
+	while (1) {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+		read_rows();
+		for (uint32_t i = 0; i < 12; i++) {
+			if (kp_states[i] && !kp_states_prev[i]) {
+				printf("pressed %lu\r\n", i);
+			}
+		}
 
-  }
+		memcpy(kp_states_prev, kp_states, sizeof(kp_states));
+		HAL_Delay(10);
+	}
   /* USER CODE END 3 */
 }
 
@@ -403,11 +456,53 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(KP_COL3_GPIO_Port, KP_COL3_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(KP_COL1_GPIO_Port, KP_COL1_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(KP_COL2_GPIO_Port, KP_COL2_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : KP_ROW2_Pin KP_ROW4_Pin */
+  GPIO_InitStruct.Pin = KP_ROW2_Pin|KP_ROW4_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : KP_ROW1_Pin KP_ROW3_Pin */
+  GPIO_InitStruct.Pin = KP_ROW1_Pin|KP_ROW3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : KP_COL3_Pin */
+  GPIO_InitStruct.Pin = KP_COL3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(KP_COL3_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : KP_COL1_Pin */
+  GPIO_InitStruct.Pin = KP_COL1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(KP_COL1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : KP_COL2_Pin */
+  GPIO_InitStruct.Pin = KP_COL2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(KP_COL2_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
@@ -427,11 +522,10 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+	/* User can add his own implementation to report the HAL error return state */
+	__disable_irq();
+	while (1) {
+	}
   /* USER CODE END Error_Handler_Debug */
 }
 
