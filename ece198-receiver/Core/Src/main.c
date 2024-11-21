@@ -19,33 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "ring_buffer.h"
-RingBuffer global_ring_buffer;
-
-void GPIO_Init(void) {
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
-
-    // Enable GPIO port clock, adjust as needed
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-
-    // Configure GPIO pin for the '1' signal (adjust pin as needed)
-    GPIO_InitStruct.Pin = GPIO_PIN_0;  // Replace with actual pin for '1'
-    GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-    // Configure GPIO pin for the '0' signal (adjust pin as needed)
-    GPIO_InitStruct.Pin = GPIO_PIN_1;  // Replace with actual pin for '0'
-    GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-    // Enable interrupts for the pins
-    HAL_NVIC_SetPriority(EXTI0_IRQn, 2, 0);
-    HAL_NVIC_EnableIRQ(EXTI0_IRQn);
-
-    HAL_NVIC_SetPriority(EXTI1_IRQn, 2, 0);
-    HAL_NVIC_EnableIRQ(EXTI1_IRQn);
-}
+#include <stdio.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -71,7 +45,9 @@ void GPIO_Init(void) {
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+RingBuffer ring_buffer;
+volatile uint8_t next_byte = 0;
+volatile uint8_t bit_counter = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -100,57 +76,76 @@ static void MX_USART2_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+	uint8_t next_bit = 0;
+	if (GPIO_Pin == DATA1_Pin) {
+		next_bit = 0b10000000;
+	}
+	else if (GPIO_Pin == DATA0_Pin) {
+		next_bit = 0b00000000;
+	}
 
+	printf("sent bit %d\r\n", next_bit);
+
+	next_byte = next_bit | (next_byte >> 1);
+	bit_counter++;
+
+	if (bit_counter == 8) {
+		ring_buffer_put(&ring_buffer, next_byte);
+		next_byte = 0;
+		bit_counter = 0;
+	}
+}
 /* USER CODE END 0 */
 
 /**
   * @brief  The application entry point.
   * @retval int
   */
-int main(void) {
-    /* USER CODE BEGIN 1 */
-    // Initialize the ring buffer
-    ring_buffer_init(&global_ring_buffer);
-    /* USER CODE END 1 */
+int main(void)
+{
 
-    /* MCU Configuration--------------------------------------------------------*/
+  /* USER CODE BEGIN 1 */
+  // Initialize the ring buffer
+  ring_buffer_init(&ring_buffer);
+  /* USER CODE END 1 */
 
-    // Reset of all peripherals, Initializes the Flash interface and the Systick.
-    HAL_Init();
+  /* MCU Configuration--------------------------------------------------------*/
 
-    /* USER CODE BEGIN Init */
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
 
-    /* USER CODE END Init */
+  /* USER CODE BEGIN Init */
 
-    // Configure the system clock
-    SystemClock_Config();
+  /* USER CODE END Init */
 
-    /* USER CODE BEGIN SysInit */
+  /* Configure the system clock */
+  SystemClock_Config();
 
-    /* USER CODE END SysInit */
+  /* USER CODE BEGIN SysInit */
 
-    // Initialize all configured peripherals
-    MX_GPIO_Init();
-    MX_USART2_UART_Init();
-    
-    // Call GPIO_Init to configure the GPIO pins for data line inputs
-    GPIO_Init();  // Add this line to initialize GPIO for data input interrupts
-    
-    /* USER CODE BEGIN 2 */
+  /* USER CODE END SysInit */
 
-    /* USER CODE END 2 */
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_USART2_UART_Init();
+  /* USER CODE BEGIN 2 */
 
-    /* Infinite loop */
-    /* USER CODE BEGIN WHILE */
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
     while (1) {
-        // Main processing loop, where you could add any logic needed to process data from the ring buffer
-        /* USER CODE END WHILE */
+    	TakeResult next = ring_buffer_take(&ring_buffer);
+    	if (next.is_valid) {
+    		printf("Received %c\r\n", next.value);
+    	}
+    /* USER CODE END WHILE */
 
-        /* USER CODE BEGIN 3 */
+    /* USER CODE BEGIN 3 */
     }
-    /* USER CODE END 3 */
+  /* USER CODE END 3 */
 }
-
 
 /**
   * @brief System Clock Configuration
@@ -264,11 +259,15 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PB8 PB9 */
-  GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_9;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  /*Configure GPIO pins : DATA0_Pin DATA1_Pin */
+  GPIO_InitStruct.Pin = DATA0_Pin|DATA1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
