@@ -152,14 +152,52 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  // Value of variable is numerical value of button pressed on keypad
+  // If button is currently not pressed, value is -1
+  int button_pressed = -1;
+
+  // Set D11, D9, D7 as outputs
+  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_7);
+  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_7);
+  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_7);
+
+  GPIO_PinState pb6_state;
+  GPIO_PinState pa9_state;
+  GPIO_PinState pb10_state;
+  GPIO_PinState pb4_state;
+
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  // Testing IO
-	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_7);
-	  HAL_Delay(500);
+
+	  pb6_state = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_6);  // Read PB6
+	  pa9_state = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_9);  // Read PA9
+	  pb10_state = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_10); // Read PB10
+	  pb4_state = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4);  // Read PB4
+
+	  if (pb6_state == GPIO_PIN_RESET) {
+		 printf("Row 1\n");
+	  }
+
+	  if (pa9_state == GPIO_PIN_RESET) {
+		  printf("Row 2\n");
+	  }
+
+	  if (pb10_state == GPIO_PIN_RESET) {
+		  printf("Row 3\n");
+	  }
+
+	  if (pb4_state == GPIO_PIN_RESET) {
+		  printf("Row 4\n");
+	  }
+
+
+
+
+
+	  HAL_Delay(100); // Delay for debouncing
   }
   /* USER CODE END 3 */
 }
