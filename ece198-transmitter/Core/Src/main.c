@@ -154,11 +154,12 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
+	  // Testing IO
+	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_7);
+	  HAL_Delay(500);
   }
   /* USER CODE END 3 */
 }
