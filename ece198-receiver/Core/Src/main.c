@@ -18,6 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "ring_buffer.h"
+#include <stdio.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -43,7 +45,9 @@
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+RingBuffer ring_buffer;
+volatile uint8_t next_byte = 0;
+volatile uint8_t bit_counter = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -51,12 +55,47 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
+// void UART_Init(void) {
+//     __HAL_RCC_USART2_CLK_ENABLE();
+//     huart2.Instance = USART2;
+//     huart2.Init.BaudRate = 9600;
+//     huart2.Init.WordLength = UART_WORDLENGTH_8B;
+//     huart2.Init.StopBits = UART_STOPBITS_1;
+//     huart2.Init.Parity = UART_PARITY_NONE;
+//     huart2.Init.Mode = UART_MODE_RX;
+//     huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+//     huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+//     HAL_UART_Init(&huart2);
+
+//     // Enable UART receive interrupt
+//     __HAL_UART_ENABLE_IT(&huart2, UART_IT_RXNE);
+// }
+
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+	uint8_t next_bit = 0;
+	if (GPIO_Pin == DATA1_Pin) {
+		next_bit = 0b10000000;
+	}
+	else if (GPIO_Pin == DATA0_Pin) {
+		next_bit = 0b00000000;
+	}
 
+	printf("sent bit %d\r\n", next_bit);
+
+	next_byte = next_bit | (next_byte >> 1);
+	bit_counter++;
+
+	if (bit_counter == 8) {
+		ring_buffer_put(&ring_buffer, next_byte);
+		next_byte = 0;
+		bit_counter = 0;
+	}
+}
 /* USER CODE END 0 */
 
 /**
@@ -67,7 +106,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+  // Initialize the ring buffer
+  ring_buffer_init(&ring_buffer);
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -95,12 +135,15 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
+    while (1) {
+    	TakeResult next = ring_buffer_take(&ring_buffer);
+    	if (next.is_valid) {
+    		printf("Received %c\r\n", next.value);
+    	}
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
+    }
   /* USER CODE END 3 */
 }
 
@@ -216,11 +259,15 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PB8 PB9 */
-  GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_9;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  /*Configure GPIO pins : DATA0_Pin DATA1_Pin */
+  GPIO_InitStruct.Pin = DATA0_Pin|DATA1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
