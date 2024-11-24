@@ -57,6 +57,9 @@ uint8_t shift_count = 0;
 
 bool kp_states_prev[12];
 bool kp_states[12];
+
+bool cfg_ready = false;
+uint32_t cfg_ready_tick = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -68,7 +71,9 @@ static void MX_TIM10_Init(void);
 static void MX_TIM11_Init(void);
 /* USER CODE BEGIN PFP */
 static void Main_TIM_OnePulse_Fire(TIM_HandleTypeDef *htim);
-static void read_rows();
+static void kp_read();
+static void cfg_set_armed(bool armed);
+static bool cfg_is_ready();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -78,7 +83,7 @@ static void Main_TIM_OnePulse_Fire(TIM_HandleTypeDef *htim) {
 	htim->Instance->CR1 |= TIM_CR1_CEN;
 }
 
-static void read_rows() {
+static void kp_read() {
 	GPIO_TypeDef* const col_ports[3] = {
 		KP_COL1_GPIO_Port,
 		KP_COL2_GPIO_Port,
@@ -112,8 +117,25 @@ static void read_rows() {
 	}
 }
 
+static void cfg_set_armed(bool armed) {
+  if (armed) {
+    cfg_ready = true;
+    cfg_ready_tick = HAL_GetTick();
+  }
+  else {
+    cfg_ready = false;
+  }
+}
+
+static bool cfg_is_ready() {
+  const uint32_t cfg_delay = 30;
+  return cfg_ready && ((HAL_GetTick() - cfg_ready_tick) >= 30);
+}
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim == &htim2) {
+	  if (!cfg_is_ready())
+	    return;
 		// check if we need a new byte
 		if (shift_count == 0) {
 			TakeResult res = ring_buffer_take(&ring_buffer);
@@ -143,9 +165,24 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 // -> 1 0 1 0 0 1 1 0
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-	if (GPIO_Pin == GPIO_PIN_13) {
-		puts("print test");
-		ring_buffer_put(&ring_buffer, 'e');
+	switch (GPIO_Pin) {
+	case CFG_Pin:
+	{
+	  bool pin_value = HAL_GPIO_ReadPin(CFG_GPIO_Port, CFG_Pin);
+	  // CFG line is ready when pulled LOW, so need to invert it
+	  cfg_set_armed(!pin_value);
+	}
+	case B1_Pin:
+	{
+	  if (cfg_is_ready()) {
+	    printf("ready\r\n");
+      ring_buffer_put(&ring_buffer, 0x31);
+	  }
+	  else {
+      printf("waiting\r\n");
+	  }
+	}
+	  break;
 	}
 }
 /* USER CODE END 0 */
@@ -184,9 +221,17 @@ int main(void)
   MX_TIM10_Init();
   MX_TIM11_Init();
   /* USER CODE BEGIN 2 */
+  // Start master output timer
 	HAL_TIM_Base_Start_IT(&htim2);
+	// Arm data line pulse timers
 	HAL_TIM_OnePulse_Start(&htim10, TIM_CHANNEL_1);
 	HAL_TIM_OnePulse_Start(&htim11, TIM_CHANNEL_1);
+
+	// Check if CFG line is already pulled down
+	if (!HAL_GPIO_ReadPin(CFG_GPIO_Port, CFG_Pin)) {
+	  cfg_set_armed(true);
+	}
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -203,7 +248,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-		read_rows();
+		kp_read();
 		for (uint32_t i = 0; i < 12; i++) {
 			if (kp_states[i] && !kp_states_prev[i]) {
 				printf("pressed %lu\r\n", i);
@@ -283,7 +328,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 839;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4999;
+  htim2.Init.Period = 999;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -504,7 +549,16 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(KP_COL2_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : CFG_Pin */
+  GPIO_InitStruct.Pin = CFG_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(CFG_GPIO_Port, &GPIO_InitStruct);
+
   /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 

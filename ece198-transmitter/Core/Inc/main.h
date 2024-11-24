@@ -86,6 +86,9 @@ void Error_Handler(void);
 #define SWO_GPIO_Port GPIOB
 #define KP_COL2_Pin GPIO_PIN_4
 #define KP_COL2_GPIO_Port GPIOB
+#define CFG_Pin GPIO_PIN_5
+#define CFG_GPIO_Port GPIOB
+#define CFG_EXTI_IRQn EXTI9_5_IRQn
 #define KP_ROW3_Pin GPIO_PIN_6
 #define KP_ROW3_GPIO_Port GPIOB
 
